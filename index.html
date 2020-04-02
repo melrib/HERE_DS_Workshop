@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>MEL Food Delivery </title>
+        <!-- SCRIPTS -->
+        <meta name="viewport" charset="UTF-8" content="initial-scale=1.0, width=device-width" />
+        <script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-core.js"></script>
+        <script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-service.js"></script>
+        <script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-ui.js"></script>
+        <script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js"></script>
+        <link rel="stylesheet" type="text/css" href="https://js.api.here.com/v3/3.1/mapsjs-ui.css"/>
+        <script type="text/javascript" src="credentials.js"></script>
+    </head>
+    <body>
+        <h1 style="text-align: center;">Entrega de Comida da MEL</h1>
+        <div id="mapContainer" style="width: 80vw; height: 50vh; background: #39B6B3; display: block; margin: 0 auto; border: solid 2px black; margin-top: 100px;" > </div>
+        <div style="width: 100vw; height: 40px; margin-top: 30px;">
+            <input type="button" onclick="showDeliveryRest()" value = "Show Restaurants" style="width: 200px; height: 30px; border: 2px solid black; display: block; margin: 0 auto; margin-top: 20px;">
+        </div>
+        <div id="panel" style="width: 30vw; background: #39B6B3; color: white; margin-top: 20px;display: block; margin: 0 auto;"></div>
+        
+    </body>
+    <script>
+        var platform = new H.service.Platform({
+            apikey: window.hereAPIKeys.JS_Key   // JS APIKEY
+        });
+
+        // Obtain the default map types from the platform object:
+
+        var defaultLayers = platform.createDefaultLayers();
+
+        // Get your current position from wego.here.com
+        
+        var myPosition = {lat: -23.631769, lng: -46.680649};
+
+        // Instantiate (and display) a map object:
+
+        var map = new H.Map(
+            document.getElementById('mapContainer'),
+            defaultLayers.vector.normal.map,
+            {
+                zoom: 15,
+                center: myPosition
+            });
+
+        var ui = H.ui.UI.createDefault(map, defaultLayers);
+
+        var mapEvents = new H.mapevents.MapEvents(map);
+
+        var behavior = new H.mapevents.Behavior(mapEvents);
+
+        // Get an instance of the routing service for using the routing API
+
+        var router = platform.getRoutingService();
+
+        // create an icon for the marker. Choose any image you want. I created mine using draw.io 
+            
+        var homeIcon = new H.map.Icon('img/home.png');
+            
+            var posMarker = new H.map.Marker(myPosition,{icon:homeIcon});
+                
+            // Add the marker to the map 
+
+        map.addObject(posMarker);
+
+        // display all take-out/ delivery restaurants around you 
+        function showDeliveryRest(){
+
+let params = {
+    "api" : "browse.search.hereapi.com/v1/browse",
+    "apiKey" : window.hereAPIKeys.REST_Key, // REST APIKEY
+    "at" : myPosition.lat+','+myPosition.lng, // position in lat,lng format as opposed to {lat:x, lng:y}
+    "q" : "restaurant",
+    "categories" : "100-1000-0000,100-1000-0003", // category Take Out and Delivery Only 
+    // for more, got to https://developer.here.com/documentation/geocoding-search-api/dev_guide/topics-places/places-category-system-full.html
+    "limit" : 100
+}
+
+let url = `https://${params.api}?apiKey=${params.apiKey}&at=${params.at}&categories=${params.categories}&name=${params.q}&limit=${params.limit}`;
+
+fetch(url,{
+    "method":"GET"
+})
+.then(response => response.json())
+.then(response => {
+                    displayRestaurants(response);}, 
+        error => {
+                    console.error(error);
+                    }
+    );
+}
+function displayRestaurants(response){
+
+var takeOutIcon = new H.map.Icon('img/takeout.png');
+
+var restGroup = new H.map.Group();
+
+for(let i = 0; i<response.items.length; i++){
+    let restPosition = response.items[i].position; 
+  
+    let data = response.items[i].title;
+  
+    let restMarker = new H.map.Marker(restPosition,{icon: takeOutIcon} );
+
+    restGroup.addObject(restMarker);
+}
+
+map.addObject(restGroup);
+
+let deliveryRestPosition = response.items[4].position;
+    showRoute(deliveryRestPosition);
+}
+function showRoute(deliveryRestPosition){
+
+// console.log(restPos);
+
+let routingParameters = {
+    // The routing mode:
+    'mode': 'fastest;car',
+    // The start point of the route:
+    'waypoint0': deliveryRestPosition.lat+','+deliveryRestPosition.lng ,
+    // The end point of the route:
+    'waypoint1': myPosition.lat+','+myPosition.lng,
+    // To retrieve the shape of the route we choose the route representation mode 'display'
+    'representation': 'display'
+    };
+
+router.calculateRoute(routingParameters, onResult,
+    function(error) {
+        alert(error.message);
+});    
+}
+ // Define a callback function to process the routing response:
+ var onResult = function(result) {
+            var route,
+                routeShape,
+                startPoint,
+                endPoint,
+                linestring;
+            if(result.response.route) {
+                // Pick the first route from the response:
+                let route = result.response.route[0];
+                // Pick the route's shape:
+                routeShape = route.shape;
+
+                // Create a linestring to use as a point source for the route line
+                linestring = new H.geo.LineString();
+
+                // Push all the points in the shape into the linestring:
+                routeShape.forEach(function(point) {
+                    var parts = point.split(',');
+                    linestring.pushLatLngAlt(parts[0], parts[1]);
+                });
+
+                // Create a polyline to display the route:
+                var routeLine = new H.map.Polyline(linestring, {
+                    style: { strokeColor: 'RGB(116, 66, 200)', lineWidth: 7 }
+                });
+                // Add the route polyline and the two markers to the map:
+                map.addObject(routeLine);
+                
+                let maneuver = route.leg[0].maneuver;
+                displayInstructions(maneuver);
+
+                // Set the map's viewport to make the whole route visible:
+                map.getViewModel().setLookAtData({bounds: routeLine.getBoundingBox()});
+            }
+        };
+
+        function displayInstructions(maneuver){
+
+let totalTravelTime = 0;
+   
+    for(let i=0; i< maneuver.length; i++){
+
+        totalTravelTime += maneuver[i].travelTime ;
+
+        instructions = maneuver[i].instruction;
+        // console.log(instructions)
+        document.getElementById("panel").innerHTML+= (i+1) + ') '+instructions +  `<br>`;
+
+    }
+
+document.getElementById("panel").innerHTML+="Estimated time : " + (totalTravelTime%60) + ' min' ;
+}
+    </script>
+</html>
